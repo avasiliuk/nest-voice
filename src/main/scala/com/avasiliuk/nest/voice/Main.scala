@@ -11,15 +11,16 @@ import scala.concurrent.duration._
   */
 object Main {
   def main(args: Array[String]): Unit = {
-    val system = ActorSystem("NestVoice")
-    system.actorOf(Props[MainActor], "myActor1")
+    val system = ActorSystem("nest-voice")
+    system.actorOf(Props[MainActor], "main-actor")
     Await.result(system.whenTerminated, Duration.Inf)
   }
 }
 
 class MainActor extends Actor with ActorLogging {
 
-  val mic = context.actorOf(Props[MicrophoneActor])
+  val mic = context.actorOf(Props[MicrophoneActor], "microphone-actor")
+  context.watch(mic)
   mic ! StartRecord
 
   import context.dispatcher
@@ -27,6 +28,7 @@ class MainActor extends Actor with ActorLogging {
   context.system.scheduler.scheduleOnce(10 seconds, mic, PoisonPill)
 
   override def receive: Receive = {
+    case Terminated => context.system.terminate()
     case x => log.debug(x.toString)
   }
 }
