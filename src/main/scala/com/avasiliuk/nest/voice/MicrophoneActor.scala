@@ -1,19 +1,20 @@
 package com.avasiliuk.nest.voice
 
-import java.io.{File, ByteArrayInputStream, PipedOutputStream, PipedInputStream}
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import java.lang.Thread.UncaughtExceptionHandler
 import javax.sound.sampled._
 
 import akka.actor.{Actor, ActorLogging, PoisonPill}
 import com.avasiliuk.nest.voice.Globals.config
-import com.avasiliuk.nest.voice.MicrophoneActor.StartRecord
+import com.avasiliuk.nest.voice.MicrophoneActor.{Speech, StartRecord}
+import net.sourceforge.javaflacencoder.FLACFileWriter
 import org.slf4j.LoggerFactory
 
 /**
   * Created by Aliaksandr Vasiliuk on 10.12.2015.
   */
 class MicrophoneActor extends Actor with ActorLogging {
-  val format: AudioFormat = new AudioFormat(8000, 8, 1, true, true)
+  val format: AudioFormat = new AudioFormat(16000, 8, 1, true, false)
 
   val info: DataLine.Info = new DataLine.Info(classOf[TargetDataLine], format)
   if (!AudioSystem.isLineSupported(info)) {
@@ -27,12 +28,12 @@ class MicrophoneActor extends Actor with ActorLogging {
 
       val thread = new Thread("Microphone thread") {
         override def run(): Unit = {
-          type Frame = Array[Byte]
+          type FramesPerSecond = Array[Byte]
 
-          def volumeRMS(frame: Array[Byte]): Double = if (frame.isEmpty) {
+          def volumeRMS(second: Array[Byte]): Double = if (second.isEmpty) {
             0d
           } else {
-            val doubles = frame.map(_.toDouble)
+            val doubles = second.map(_.toDouble)
             val sum = doubles.sum
             val average = sum / doubles.length
             val meanSquare = doubles.foldLeft(0d) { (acc, n) =>
@@ -42,52 +43,57 @@ class MicrophoneActor extends Actor with ActorLogging {
             Math.sqrt(meanSquare)
           }
 
-          def sendAudio(frames: List[Frame]) = {
-            log.debug(s"Sending audio. ${frames.size} frames")
+          def sendAudio(frames: List[FramesPerSecond]) = {
+            log.debug(s"Sending audio. ${frames.size} seconds")
             val array: Array[Byte] = frames.flatMap(f => f).toArray[Byte]
             val is = new ByteArrayInputStream(array)
-            val ais = new AudioInputStream(is, format, frames.size)
-            AudioSystem.write(ais, AudioFileFormat.Type.WAVE, new File("test.wav"))
+            val ais = new AudioInputStream(is, format, frames.size * format.getFrameRate.toInt)
+            val os = new ByteArrayOutputStream()
+            //            AudioSystem.write(ais, FLACFileWriter.FLAC, new File("test.flac"))
+            AudioSystem.write(ais, FLACFileWriter.FLAC, os)
+            context.parent ! Speech(os.toByteArray, format.getSampleRate.toInt)
           }
 
           line.open(format)
           line.start()
           log.debug("Start sound capturing...")
           val ais: AudioInputStream = new AudioInputStream(line)
-          val frame = new Frame(format.getSampleRate.toInt)
+          var second = new FramesPerSecond(format.getSampleRate.toInt)
 
-          var read = ais.read(frame)
-          var frames = List[Frame]()
+          var read = ais.read(second)
+          var recorded = List[FramesPerSecond]()
+          var emptySeconds = 0
           while (read > 0) {
-            val rms = volumeRMS(frame)
-            log.debug(s"Bytes:$read RMS:$rms")
-            val hasWords = rms > config.getDouble("nest-voice.silence-threshold")
+            val rms = volumeRMS(second)
+            log.debug(s"Bytes:$read RMS:$rms Recorded:${recorded.size}")
+            val hasWords = (read == format.getSampleRate.toInt) && (rms > config.getDouble("nest-voice.silence-threshold"))
             if (hasWords) {
-              frames = frames :+ frame
+              recorded = recorded :+ second
+              emptySeconds = 0
             } else {
-              if (frames.nonEmpty) {
-                sendAudio(frames)
+              if (emptySeconds < 1) {
+                recorded = recorded :+ second
+                emptySeconds += 1
+              } else {
+                if (recorded.size > emptySeconds) {
+                  sendAudio(recorded)
+                }
+                recorded = Nil
               }
-              frames = Nil
             }
-            read = ais.read(frame)
+            second = new FramesPerSecond(format.getSampleRate.toInt)
+            read = ais.read(second)
           }
-          //AudioSystem.write(ais, AudioFileFormat.Type.WAVE, new OutputStream {
-          //  override def write(b: Int): Unit = print(" " + b)
-          //})
-          //AudioSystem.write(ais, AudioFileFormat.Type.WAVE, new File("test.wav"))
-          if (frames.nonEmpty) sendAudio(frames)
+          if (recorded.size > emptySeconds) sendAudio(recorded)
           log.debug("Stop sound capturing...")
         }
       }
-
       thread.setUncaughtExceptionHandler(new UncaughtExceptionHandler {
         override def uncaughtException(t: Thread, e: Throwable): Unit = {
           LoggerFactory.getLogger(classOf[MicrophoneActor]).error("", e)
           context.self ! PoisonPill
         }
       })
-
       thread.start();
   }
 
@@ -99,6 +105,6 @@ class MicrophoneActor extends Actor with ActorLogging {
 
 object MicrophoneActor {
   case class StartRecord()
-  case class AudioWithWords(array: Array[Byte])
+  case class Speech(array: Array[Byte], sampleRate: Int)
 }
 

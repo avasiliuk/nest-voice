@@ -1,4 +1,6 @@
 target/
 .idea
 *.iml
-test.wav
+*.wav
+*.flac
+nest-voice.conf
