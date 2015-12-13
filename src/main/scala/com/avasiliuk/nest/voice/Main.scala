@@ -1,8 +1,8 @@
 package com.avasiliuk.nest.voice
 
 import akka.actor._
-import com.avasiliuk.nest.voice.MicrophoneActor.{Speech, StartRecord}
-import com.squareup.okhttp.{MediaType, OkHttpClient, Request, RequestBody}
+import com.avasiliuk.nest.voice.Globals._
+import com.avasiliuk.nest.voice.MicrophoneActor.StartRecord
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -19,25 +19,18 @@ object Main {
 }
 
 class MainActor extends Actor with ActorLogging {
-  val mic = context.actorOf(Props[MicrophoneActor], "microphone-actor")
-  val speechRecognition = context.actorOf(Props[SpeechRecognitionActor], "speech-recognition-actor")
-  context.watch(mic)
-  mic ! StartRecord
 
-  //  import context.dispatcher
-  //  context.system.scheduler.scheduleOnce(30 seconds, mic, PoisonPill)
+  val speechRecognition = context.actorOf(Props[SpeechRecognitionActor], "speech-recognition-actor")
+  val microphone = context.actorOf(MicrophoneActor.props(speechRecognition), "microphone-actor")
+  val nest = context.actorOf(NestActor.props(config.getString("nest-voice.nest-access-token"), config.getString("nest-voice.nest-url")), "nest-actor")
+
+  context.watch(microphone)
+  context.watch(speechRecognition)
+  context.watch(nest)
+
+  microphone ! StartRecord
 
   override def receive: Receive = {
     case Terminated => context.system.terminate()
-    case Speech(audio, sampleRate) => {
-      val client = new OkHttpClient()
-      val key = Globals.config.getString("nest-voice.google-speach-api-key")
-      val request = new Request.Builder()
-        .url(s"https://www.google.com/speech-api/v2/recognize?output=json&client=chromium&lang=en-US&key=$key")
-        .post(RequestBody.create(MediaType.parse(s"audio/x-flac; rate=$sampleRate;"), audio))
-        .build()
-      val response = client.newCall(request).execute()
-      println(response.body().string())
-    }
   }
 }
