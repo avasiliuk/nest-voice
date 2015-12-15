@@ -7,7 +7,7 @@ import javax.sound.sampled._
 
 import akka.actor._
 import com.avasiliuk.nest.voice.Globals.config
-import com.avasiliuk.nest.voice.MicrophoneActor.{RecordedSpeech, StartRecord}
+import com.avasiliuk.nest.voice.Messages.{RecordedSpeech, StartSpeechRecord}
 import net.sourceforge.javaflacencoder.FLACFileWriter
 import org.slf4j.LoggerFactory
 
@@ -95,7 +95,7 @@ class MicrophoneActor(sendTo: ActorRef) extends Actor with ActorLogging {
 
 
   override def receive: Receive = {
-    case StartRecord if thread.getState == NEW => thread.start()
+    case StartSpeechRecord if thread.getState == NEW => thread.start()
   }
 
   override def postStop(): Unit = {
@@ -105,8 +105,6 @@ class MicrophoneActor(sendTo: ActorRef) extends Actor with ActorLogging {
 }
 
 object MicrophoneActor {
-  case class StartRecord()
-  case class RecordedSpeech(audio: Array[Byte], sampleRate: Int)
   def props(sendTo: ActorRef) = Props(new MicrophoneActor(sendTo))
 }
 

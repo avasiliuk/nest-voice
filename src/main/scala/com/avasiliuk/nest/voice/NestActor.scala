@@ -1,16 +1,18 @@
 package com.avasiliuk.nest.voice
 
 import akka.actor._
-import com.avasiliuk.nest.voice.ThermostatsActor.{Initialized, Thermostat}
-import com.firebase.client.Firebase.AuthResultHandler
+import com.avasiliuk.nest.voice.Messages.{NestInitialized, Recognized}
+import com.avasiliuk.nest.voice.NestActor.{SetTargetTemperature, Thermostat}
+import com.firebase.client.Firebase.{AuthResultHandler, CompletionListener}
 import com.firebase.client._
 
 import scala.collection.JavaConversions._
+import scala.util.Try
 
 /**
   * Created by Aliaksandr Vasiliuk on 11.12.2015.
   */
-class ThermostatsActor(replyTo: ActorRef, nestToken: String, firebaseURL: String, homeName: String) extends Actor with ActorLogging {
+class NestActor(replyTo: ActorRef, nestToken: String, firebaseURL: String, homeName: String) extends Actor with ActorLogging {
   val fbAll = new Firebase(firebaseURL)
   var thermostats = Map[String, Thermostat]()
   var initialized = false
@@ -43,7 +45,7 @@ class ThermostatsActor(replyTo: ActorRef, nestToken: String, firebaseURL: String
 
       thermostats = dataSnapshot.child("devices").child("thermostats").getChildren.map { t =>
         val tm = Thermostat(id = t.child("device_id").getValue.toString,
-          where = whereisMap.getOrElse(t.child("where_id").getValue.toString, ""),
+          where = whereisMap.getOrElse(t.child("where_id").getValue.toString, "").toLowerCase(),
           currentTemperature = t.child("ambient_temperature_f").getValue.toString.toInt,
           targetTemperature = t.child("target_temperature_f").getValue.toString.toInt)
         (tm.where, tm)
@@ -51,20 +53,43 @@ class ThermostatsActor(replyTo: ActorRef, nestToken: String, firebaseURL: String
 
       if (!initialized) {
         initialized = true
-        replyTo ! Initialized
-        context.become(processShapshot andThen processCommands, discardOld = true)
+        replyTo ! NestInitialized
+        context.become(processShapshot orElse processCommands, discardOld = true)
       }
-      log.debug(s"Updated ${thermostats.size} thermostats")
+      if (log.isDebugEnabled) {
+        log.debug(s"Updated ${thermostats.size} thermostats")
+        thermostats.values.foreach(t => log.debug(t.toString))
+      }
+
   }
 
   def processCommands: Receive = {
-    case _ =>
-  }
+    case Recognized(text) =>
+      val t = text.split("\\s").foldLeft(SetTargetTemperature()) { (tt, word) =>
+        thermostats.get(word.toLowerCase).fold {
+          tt.copy(targetTemperature = Try(Some(word.toInt)).getOrElse(None))
+        } { thermostat =>
+          tt.copy(id = Some(thermostat.id), where = Some(thermostat.where))
+        }
+      }
 
+      if (t.id.isDefined && t.targetTemperature.isDefined) {
+        log.debug(s"Setting ${t.where.get} thermostat to ${t.targetTemperature.get}")
+        fbAll.child(s"devices/thermostats/${t.id.get}/target_temperature_f").setValue(t.targetTemperature.get, new CompletionListener {
+          override def onComplete(firebaseError: FirebaseError, firebase: Firebase): Unit = {
+            if (firebaseError != null) {
+              logAndStop(firebaseError)
+            } else {
+              log.debug("Success")
+            }
+          }
+        })
+      }
+  }
 }
 
-object ThermostatsActor {
-  case class Initialized()
+object NestActor {
+  case class SetTargetTemperature(id: Option[String] = None, where: Option[String] = None, targetTemperature: Option[Int] = None)
   case class Thermostat(id: String, where: String, currentTemperature: Int, targetTemperature: Int)
-  def props(replyTo: ActorRef, nestToken: String, firebaseURL: String, homeName: String) = Props(new ThermostatsActor(replyTo, nestToken, firebaseURL, homeName))
+  def props(replyTo: ActorRef, nestToken: String, firebaseURL: String, homeName: String) = Props(new NestActor(replyTo, nestToken, firebaseURL, homeName))
 }

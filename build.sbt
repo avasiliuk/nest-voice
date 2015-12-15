@@ -13,7 +13,7 @@ libraryDependencies ++= Seq(
   "com.squareup.okhttp" % "okhttp" % "2.6.0",
   "net.sourceforge.javaflacencoder" % "java-flac-encoder" % "0.3.7",
   "org.json4s" %% "json4s-jackson" % "3.3.0",
-  "com.firebase" % "firebase-client-android" % "2.4.1",
+  "com.firebase" % "firebase-client-android" % "1.1.1",
   "org.apache.httpcomponents" % "httpclient" % "4.5.1"
 )
 

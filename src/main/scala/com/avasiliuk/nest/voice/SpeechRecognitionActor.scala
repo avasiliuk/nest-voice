@@ -3,8 +3,7 @@ package com.avasiliuk.nest.voice
 import java.io.IOException
 
 import akka.actor._
-import com.avasiliuk.nest.voice.MicrophoneActor.RecordedSpeech
-import com.avasiliuk.nest.voice.SpeechRecognitionActor.Recognized
+import com.avasiliuk.nest.voice.Messages.{Recognized, RecordedSpeech}
 import com.squareup.okhttp._
 
 /**
@@ -32,7 +31,7 @@ class SpeechRecognitionActor(replyTo: ActorRef) extends Actor with ActorLogging 
           import org.json4s.jackson.JsonMethods._
           val responseBody = response.body().string()
           //eliminates strange response with 2 results (one empty)
-          val prepared = responseBody.replaceAllLiterally("{\"result\":[]}", "")
+          val prepared = responseBody.replaceAllLiterally("{\"result\":[]}", "").trim
           lazy val json = parse(prepared)
           if (prepared.nonEmpty && (json \ "result").children.nonEmpty) {
             val JString(text) = (json \ "result" \ "alternative") (0) \ "transcript"
@@ -47,6 +46,5 @@ class SpeechRecognitionActor(replyTo: ActorRef) extends Actor with ActorLogging 
 }
 
 object SpeechRecognitionActor {
-  case class Recognized(test: String)
   def props(replyTo: ActorRef) = Props(new SpeechRecognitionActor(replyTo))
 }
