@@ -56,11 +56,7 @@ class NestActor(replyTo: ActorRef, nestToken: String, firebaseURL: String, homeN
         replyTo ! NestInitialized
         context.become(processShapshot orElse processCommands, discardOld = true)
       }
-      if (log.isDebugEnabled) {
-        log.debug(s"Updated ${thermostats.size} thermostats")
-        thermostats.values.foreach(t => log.debug(t.toString))
-      }
-
+      log.debug(s"Synced ${thermostats.size} thermostats")
   }
 
   def processCommands: Receive = {
@@ -74,13 +70,12 @@ class NestActor(replyTo: ActorRef, nestToken: String, firebaseURL: String, homeN
       }
 
       if (t.id.isDefined && t.targetTemperature.isDefined) {
-        log.debug(s"Setting ${t.where.get} thermostat to ${t.targetTemperature.get}")
         fbAll.child(s"devices/thermostats/${t.id.get}/target_temperature_f").setValue(t.targetTemperature.get, new CompletionListener {
           override def onComplete(firebaseError: FirebaseError, firebase: Firebase): Unit = {
             if (firebaseError != null) {
               logAndStop(firebaseError)
             } else {
-              log.debug("Success")
+              log.debug(s"Set ${t.where.get} thermostat to ${t.targetTemperature.get}")
             }
           }
         })

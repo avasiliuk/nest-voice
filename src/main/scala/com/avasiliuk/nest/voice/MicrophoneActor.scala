@@ -42,7 +42,7 @@ class MicrophoneActor(sendTo: ActorRef) extends Actor with ActorLogging {
       }
 
       def sendAudio(frames: List[FramesPerSecond]) = {
-        log.debug(s"Sending audio. ${frames.size} seconds")
+        log.debug(s"Sending recorded voice. ${frames.size} seconds")
         val array: Array[Byte] = frames.flatMap(f => f).toArray[Byte]
         val is = new ByteArrayInputStream(array)
         val ais = new AudioInputStream(is, format, frames.size * format.getFrameRate.toInt)
@@ -53,7 +53,7 @@ class MicrophoneActor(sendTo: ActorRef) extends Actor with ActorLogging {
 
       line.open(format)
       line.start()
-      log.debug("Start sound capturing...")
+      log.debug("Listening for voice commands...")
       val ais: AudioInputStream = new AudioInputStream(line)
       var second = new FramesPerSecond(format.getSampleRate.toInt)
 
