@@ -2,3 +2,4 @@ silence-threshold = 1.0
 nest-url = "wss://developer-api.nest.com"
 google-speach-api-key =
 nest-access-token =
+structure-name = "test-home"

@@ -62,7 +62,7 @@ class MicrophoneActor(sendTo: ActorRef) extends Actor with ActorLogging {
       var emptySeconds = 0
       while (read > 0) {
         val rms = volumeRMS(second)
-        log.debug(s"Bytes:$read RMS:$rms Recorded:${recorded.size}")
+        //log.debug(s"Bytes:$read RMS:$rms Recorded:${recorded.size}")
         val hasWords = (read == format.getSampleRate.toInt) && (rms > config.getDouble("nest-voice.silence-threshold"))
         if (hasWords) {
           recorded = recorded :+ second
@@ -75,7 +75,7 @@ class MicrophoneActor(sendTo: ActorRef) extends Actor with ActorLogging {
             if (recorded.size > emptySeconds) {
               sendAudio(recorded)
             }
-            recorded = Nil
+            recorded = List(second)
           }
         }
         second = new FramesPerSecond(format.getSampleRate.toInt)

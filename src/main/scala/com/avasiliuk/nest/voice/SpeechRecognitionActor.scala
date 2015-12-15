@@ -2,19 +2,20 @@ package com.avasiliuk.nest.voice
 
 import java.io.IOException
 
-import akka.actor.{Actor, ActorLogging, ActorRef, PoisonPill}
-import com.avasiliuk.nest.voice.SpeechRecognitionActor.{RecognizeSpeech, Recognized}
+import akka.actor._
+import com.avasiliuk.nest.voice.MicrophoneActor.RecordedSpeech
+import com.avasiliuk.nest.voice.SpeechRecognitionActor.Recognized
 import com.squareup.okhttp._
 
 /**
   * Created by Aliaksandr Vasiliuk on 11.12.2015.
   */
-class SpeechRecognitionActor extends Actor with ActorLogging {
+class SpeechRecognitionActor(replyTo: ActorRef) extends Actor with ActorLogging {
   val client = new OkHttpClient()
   val key = Globals.config.getString("nest-voice.google-speach-api-key")
 
   override def receive: Receive = {
-    case RecognizeSpeech(audio, sampleRate, sendTo) =>
+    case RecordedSpeech(audio, sampleRate) =>
       val request = new Request.Builder()
         .url(s"https://www.google.com/speech-api/v2/recognize?output=json&client=chromium&lang=en-US&key=$key")
         .post(RequestBody.create(MediaType.parse(s"audio/x-flac; rate=$sampleRate;"), audio))
@@ -30,16 +31,22 @@ class SpeechRecognitionActor extends Actor with ActorLogging {
           import org.json4s._
           import org.json4s.jackson.JsonMethods._
           val responseBody = response.body().string()
-          log.debug(responseBody)
-          val json = parse(responseBody)
-          val JString(text) = (json \ "result" \ "alternative") (0) \ "transcript"
-          sendTo ! Recognized(text)
+          //eliminates strange response with 2 results (one empty)
+          val prepared = responseBody.replaceAllLiterally("{\"result\":[]}", "")
+          lazy val json = parse(prepared)
+          if (prepared.nonEmpty && (json \ "result").children.nonEmpty) {
+            val JString(text) = (json \ "result" \ "alternative") (0) \ "transcript"
+            log.debug(s"Recognized as: $text")
+            replyTo ! Recognized(text)
+          } else {
+            log.debug("empty recognition result")
+          }
         }
       })
   }
 }
 
 object SpeechRecognitionActor {
-  case class RecognizeSpeech(audio: Array[Byte], sampleRate: Int, sendTo: ActorRef)
   case class Recognized(test: String)
+  def props(replyTo: ActorRef) = Props(new SpeechRecognitionActor(replyTo))
 }

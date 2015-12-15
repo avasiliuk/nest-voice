@@ -3,6 +3,7 @@ package com.avasiliuk.nest.voice
 import akka.actor._
 import com.avasiliuk.nest.voice.Globals._
 import com.avasiliuk.nest.voice.MicrophoneActor.StartRecord
+import com.avasiliuk.nest.voice.SpeechRecognitionActor.Recognized
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
@@ -20,17 +21,23 @@ object Main {
 
 class MainActor extends Actor with ActorLogging {
 
-  val speechRecognition = context.actorOf(Props[SpeechRecognitionActor], "speech-recognition-actor")
-  val microphone = context.actorOf(MicrophoneActor.props(speechRecognition), "microphone-actor")
-  val nest = context.actorOf(NestActor.props(config.getString("nest-voice.nest-access-token"), config.getString("nest-voice.nest-url")), "nest-actor")
+  val nest = context.actorOf(ThermostatsActor.props(
+    self,
+    config.getString("nest-voice.nest-access-token"),
+    config.getString("nest-voice.nest-url"),
+    config.getString("nest-voice.structure-name")
+  ), "nest-actor")
 
-  context.watch(microphone)
-  context.watch(speechRecognition)
   context.watch(nest)
-
-  microphone ! StartRecord
 
   override def receive: Receive = {
     case Terminated => context.system.terminate()
+    case ThermostatsActor.Initialized =>
+      val speechRecognition = context.actorOf(SpeechRecognitionActor.props(context.self), "speech-recognition-actor")
+      context.watch(speechRecognition)
+      val microphone = context.actorOf(MicrophoneActor.props(speechRecognition), "microphone-actor")
+      context.watch(microphone)
+      microphone ! StartRecord
+    case Recognized(text) =>
   }
 }
